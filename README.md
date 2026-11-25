@@ -12,9 +12,10 @@ Upload the six-band GeoTIFF and enter three separate output folders. The six-ban
 
 PCA is calculated across valid pixels from all six bands. By default it uses covariance PCA (all bands are assumed to use the same reflectance units); optional unit-variance normalization uses correlation PCA. PC scores and the explained-variance fractions are reported. Outputs retain the source grid and CRS.
 
-For a supervised landslide probability map, upload a co-registered label raster with 0 for background and 1 for landslide. A Random Forest uses all six PC scores and outputs a probability raster plus a 0/1 candidate map. Without labels, an absolute-PC4 quantile screen is used; this is an exploratory anomaly layer and is not a trained or validated landslide prediction.
+For a supervised landslide probability map, upload a co-registered label raster with 0 for background and 1 for landslide. A Random Forest uses all six PC scores and outputs a probability raster plus a 0/1 candidate map. Without labels, an Isolation Forest on PC1–PC4 supports a PC4-primary quantile screen. Extreme PC1 and PC3 responses are suppressed as possible snow and hydrothermal-mineral confounders, following the supplied interpretation figure. This remains an exploratory anomaly layer, not a trained or validated landslide prediction.
 
 ## Requirements and limits
 
-Input must have exactly six bands and a CRS. Labels, if supplied, must match the input grid exactly. Landslide mapping quality depends on representative labels and independent validation. The app does not infer terrain, slope, rainfall, or landslide truth from PC4 alone.
+Input must have exactly six bands and a CRS. Labels, if supplied, must match the input grid exactly. Landslide mapping quality depends on representative labels and independent validation. PC4 is the primary unlabelled signal; the interpretation figure's PC2 steep-slope cue can support review, but no DEM-derived slope is available unless provided separately. The app does not establish landslide truth from PCA alone.
+
 
