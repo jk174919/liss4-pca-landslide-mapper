@@ -2,7 +2,7 @@ from pathlib import Path
 import numpy as np
 import rasterio
 from rasterio.windows import Window
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, IsolationForest
 
 NODATA_OUT = -9999.0
 
@@ -57,7 +57,7 @@ def run_pca(image_path, pca_dir, pc4_dir, landslide_dir, labels_path=None,
         with rasterio.open(pca_path,"w",**out_profile) as dst, rasterio.open(pc4_path,"w",**pc4_profile) as pc4dst:
             dst.update_tags(AREA_OR_POINT=profile.get("AREA_OR_POINT","Area"), PCA_METHOD="covariance" if not normalize else "correlation", PCA_INPUT_BANDS="pre:1-3;post:4-6", EXPLAINED_VARIANCE=",".join(f"{v/vals.sum():.8f}" for v in vals))
             pc4dst.update_tags(PCA_COMPONENT="PC4", PCA_INPUT_BANDS="pre:1-3;post:4-6")
-            pc4_samples=[]; pc4_offset=0
+            pc4_samples=[]; screen_samples=[]
             for win in _windows(width,height):
                 data=src.read(window=win,out_dtype="float64")
                 valid=np.all(np.isfinite(data),axis=0)&np.all(src.read_masks(window=win)>0,axis=0)
@@ -67,10 +67,19 @@ def run_pca(image_path, pca_dir, pc4_dir, landslide_dir, labels_path=None,
                     scores=((x-mean)/scale)@components
                     transformed[:,valid]=scores.T.astype("float32")
                     pc4_samples.append(scores[:,3].astype("float32"))
+                    if sum(a.shape[0] for a in screen_samples)<200000:
+                        screen_samples.append(scores[:max(0,200000-sum(a.shape[0] for a in screen_samples)),:4].astype("float32"))
                 dst.write(transformed,window=win)
                 pc4dst.write(transformed[3:4],window=win)
         pc4_values=np.concatenate(pc4_samples)
-        threshold=float(np.quantile(np.abs(pc4_values),candidate_quantile))
+        screen=np.concatenate(screen_samples,axis=0)
+        center=np.median(screen,axis=0)
+        robust_scale=1.4826*np.median(np.abs(screen-center),axis=0)
+        robust_scale=np.where(robust_scale>1e-12,robust_scale,np.std(screen,axis=0)+1e-12)
+        zscreen=(screen-center)/robust_scale
+        threshold=float(np.quantile(np.abs(zscreen[:,3]),candidate_quantile))
+        pc1_limit=float(np.quantile(np.abs(zscreen[:,0]),0.99))
+        pc3_limit=float(np.quantile(np.abs(zscreen[:,2]),0.99))
 
         if labels_path:
             with rasterio.open(labels_path) as lab:
@@ -98,9 +107,9 @@ def run_pca(image_path, pca_dir, pc4_dir, landslide_dir, labels_path=None,
             model.fit(X,y)
             method="Random Forest trained from supplied 0/1 labels"
         else:
-            model=None
-            # Unsupervised fallback on PC4; this is not a trained landslide classifier.
-            method="PC4 absolute-value quantile heuristic (no labels supplied)"
+            model=IsolationForest(n_estimators=200,contamination=max(0.001,min(0.25,1-candidate_quantile)),random_state=42,n_jobs=-1)
+            model.fit(zscreen)
+            method="Interpretation-guided unsupervised PC4-primary screening; PC1/PC3 extremes suppressed, Isolation Forest anomaly filter"
 
         slide_profile=profile.copy(); slide_profile.update(count=1,dtype="uint8",nodata=255,compress="deflate",bigtiff="IF_SAFER")
         with rasterio.open(slide_path,"w",**slide_profile) as sd:
@@ -120,9 +129,13 @@ def run_pca(image_path, pca_dir, pc4_dir, landslide_dir, labels_path=None,
                         mask[valid]=(probs>=0.5).astype("uint8")
                         pb=np.full(mask.shape,NODATA_OUT,dtype="float32"); pb[valid]=probs.astype("float32"); pdst.write(pb,1,window=win)
                     else:
-                        mask[valid]=((threshold>0) & (np.abs(scores[:,3])>=threshold)).astype("uint8")
+                        z=(scores[:,:4]-center)/robust_scale
+                        anomalies=(model.predict(z)==-1)
+                        mask[valid]=(anomalies & (np.abs(z[:,3])>=threshold) & (np.abs(z[:,0])<=pc1_limit) & (np.abs(z[:,2])<=pc3_limit)).astype("uint8")
                 sd.write(mask,1,window=win)
             if labels_path: pdst.close()
     return {"pca":str(pca_path),"pc4":str(pc4_path),"candidates":str(slide_path),"probability":str(prob_path) if labels_path else None,"method":method,"variance":(vals/vals.sum()).tolist(),"threshold":threshold}
+
+
 
 
