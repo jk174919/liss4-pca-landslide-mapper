@@ -38,5 +38,6 @@ if st.button("Run PCA and map candidates",type="primary",disabled=image is None)
     except Exception as exc:
         st.error(str(exc))
 
-st.caption("The unlabelled PC4 result is a screening layer, not a validated landslide inventory. Verify candidates against imagery, field data, and expert interpretation.")
+st.caption("The unlabelled PC4-primary result is a screening layer, not a validated landslide inventory. PC1 and PC3 extremes are suppressed as potential snow/mineral confounders based on the supplied interpretation figure. Verify candidates against imagery, field data, and expert interpretation.")
+
 
