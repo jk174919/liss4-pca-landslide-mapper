@@ -86,7 +86,12 @@ if st.button("Run PCA and map candidates",type="primary",disabled=not image_file
         st.write("**Outputs**")
         st.code("\n".join(f"{k}: {v}" for k,v in result.items() if k in ("pca","pc4","candidates","probability") and v))
     except Exception as exc:
-        st.error(str(exc))
+        st.error(f"Raster processing failed: {exc}")
+        if image_files and any(Path(f.name).suffix.lower()==".img" for f in image_files):
+            st.warning("For ERDAS IMG data, upload the matching .ige sidecar in the same selection if one exists. Keep the .img and .ige base names identical. Also confirm the IMG opens in QGIS and contains exactly six readable bands.")
+        with st.expander("Technical details"):
+            st.exception(exc)
 
 st.caption("PC4-primary candidate screening is exploratory, not a validated landslide inventory. PC1 and PC3 extremes are suppressed as potential snow/mineral confounders based on the supplied interpretation. Verify candidates against imagery, field data, and expert interpretation.")
+
 
